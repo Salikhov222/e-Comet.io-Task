@@ -1,47 +1,26 @@
-import aiohttp
 import asyncpg
 import logging
+
 from asyncpg import Record
 from typing import Dict, List, Any
+from datetime import datetime
+from github_api import top_100_repos, repo_commits
+from db import fetch_existing_repos, insert_new_repos, update_existing_repos
 
 
-GITHUB_API_URL = "https://api.github.com"
-headers = {
-    "Accept": "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28"
-}
-
-async def fetch_repos(session: aiohttp.ClientSession, url: str) -> Dict:
-    """Обращение к API GitHub для парсинга данных"""
-    async with session.get(url, headers=headers) as result:
-        result.raise_for_status()   # вызов исключения для ошибок HTTP
-        return await result.json()
-    
-async def top_100_repos() -> List[Dict[str, Any]]:
-    """Получение топ 100 репозиториев"""
-    async with aiohttp.ClientSession() as session:
-        url = f"{GITHUB_API_URL}/search/repositories?q=stars:>0&sort=stars&order=desc&per_page=100"
-        response = await fetch_repos(session, url)
-        return response["items"]
-    
-async def save_top_100_repos_tp_db(connection: asyncpg.Connection) -> None:
+async def save_top_100_repos_tp_db(connection: asyncpg.Connection) -> List[Dict[str, Any]]:
     """Запись данных в БД"""
     repos: List[Dict[str, Any]] = await top_100_repos()
-    rows: List[Record] = await connection.fetch("SELECT repo, position_cur FROM top_repos")
-    repo_positions = {row['repo']: row['position_cur'] for row in rows}
-    insert_list = []
-    update_list = []
+    repo_id = await fetch_existing_repos(connection)
+    insert_list = []    # список для вставки новых репозиториев из запроса
+    update_list = []    # список для обновления существующих в БД репозиториев
 
-    for position, item in enumerate(repos, start=1):
+    for item in repos:
         repo = item["full_name"]
-        position_cur = position
-        position_prev = repo_positions.get(repo, None)
 
-        if repo not in repo_positions:
+        if repo not in repo_id:
             insert_list.append((repo,
                                 item["owner"]["login"],
-                                position_cur,
-                                None,
                                 item["stargazers_count"],
                                 item["watchers_count"],
                                 item["forks_count"],
@@ -49,10 +28,8 @@ async def save_top_100_repos_tp_db(connection: asyncpg.Connection) -> None:
                                 item["language"]))
             
         else:
-            update_list.append((repo,
+            update_list.append((repo_id[repo][0],    # id текущего репозитория,
                                 item["owner"]["login"],
-                                position_cur,
-                                position_prev,
                                 item["stargazers_count"],
                                 item["watchers_count"],
                                 item["forks_count"],
@@ -62,21 +39,70 @@ async def save_top_100_repos_tp_db(connection: asyncpg.Connection) -> None:
     try:
         async with connection.transaction():
             if update_list:
-                for update_data in update_list:
-                    await connection.execute("""UPDATE top_repos
-                                            SET
-                                                owner = $2,
-                                                position_cur = $3,
-                                                position_prev = $4,
-                                                stars = $5,
-                                                watchers = $6,
-                                                forks = $7,
-                                                open_issues = $8,
-                                                language = $9
-                                            WHERE repo = $1""", *update_data)
+                await update_existing_repos(connection, update_list)
             if insert_list:
-                await connection.executemany("INSERT INTO top_repos VALUES(DEFAULT, $1, $2, $3, $4, $5, $6, $7, $8, $9)", insert_list)
+                await insert_new_repos(connection, insert_list)
+        logging.info("Репозитории успешно сохранены в БД")
+
     except asyncpg.PostgresError as e:
-        logging.error(f'Ошибка при выполнении транзакции: {e}')
+        logging.error(f'Ошибка при выполнении транзакции для записи или обновления данных в БД: {e}')
         raise
 
+    return repos 
+
+async def update_positions_top_100(connection: asyncpg.Connection) -> None:
+    """Обновление текущей и предыдущей позиции репозитория"""
+    repo_id = await fetch_existing_repos(connection)
+    for i, key in enumerate(repo_id, start=1):
+        position_cur = repo_id[key][1]
+        if i != position_cur:   # в случае несовпадения текущего места репозитория по индексу производим обновление позиций
+            try:
+                async with connection.transaction():
+                    await connection.execute("""UPDATE top_repos
+                                                SET
+                                                    position_cur = $1,
+                                                    position_prev = $2
+                                                WHERE repo = $3""",
+                                            i, position_cur, key)
+            except asyncpg.PostgresError as e:
+                logging.error(f'Ошибка при выполнении транзакции для обновления позиций репозиториев: {e}')
+                raise
+    logging.info("Позиции репозиториев успешно обновлены")
+
+async def repo_activity(repos: List[Dict[str, Any]], connection: asyncpg.Connection) -> List:
+    """Получение активности репозиториев и сохранением этих данных в БД"""
+    existing_repos = await fetch_existing_repos(connection)
+    for repo in repos:
+        repo_id = existing_repos[repo['full_name']][0]
+        owner, repo = repo['full_name'].split('/')
+        commits = await repo_commits(owner, repo)
+        # словарь для хранения коммитов в по дням в качестве ключей, а
+        # значением будет еще один словарь с количеством коммитов и
+        # множеством авторов
+        activity: Dict[str, Dict[str, Any]] = {}
+        for item in commits:
+            commit_date_str = item["commit"]["author"]["date"][:10]
+            commit_date = datetime.strptime(commit_date_str, "%Y-%m-%d").date()     # преобразование строки в формат date
+            if commit_date not in activity:
+                activity[commit_date] = {"commits_count": 0, "authors": set()}
+            activity[commit_date]["commits_count"] += 1
+            activity[commit_date]["authors"].add(item["commit"]["author"]["name"])
+
+        insert_data = []
+        for date, data in activity.items():
+            commit_count = data['commits_count']
+            authors = list(data['authors'])
+            insert_data.append((repo_id, date, commit_count, authors))  
+        
+
+        try:
+            async with connection.transaction():
+                await connection.executemany("""INSERT INTO repo_activity 
+                                             VALUES (DEFAULT, $1, $2, $3, $4)
+                                             ON CONFLICT (repo_id, date)
+                                             DO UPDATE SET commits = EXCLUDED.commits, authors = EXCLUDED.authors""",
+                                             insert_data)    
+        except asyncpg.PostgresError as e:
+            logging.error(f'Ошибка при выполнении транзакции для записи активности репозитория: {e}')
+            raise
+    logging.info("Коммиты по дням успешно сохранены в БД")
