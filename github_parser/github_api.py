@@ -9,7 +9,7 @@ GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
 headers = {
     "Accept": "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
-    "Authorization": f'token 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'
+    "Authorization": f'token {GITHUB_TOKEN}'
 }
 
 async def fetch_data(session: aiohttp.ClientSession, url: str) -> Dict:
