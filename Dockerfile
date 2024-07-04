@@ -4,6 +4,10 @@ FROM python:3.10-slim
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
+# Копируем bash скрипт для проверки состояния БД
+COPY /wait-for-it.sh .
+RUN chmod +x wait-for-it.sh
+
 # Устанавливаем рабочую директорию внутри контейнера
 WORKDIR /src
 
@@ -13,4 +17,4 @@ COPY src/ src/
 # Указываем переменную окружения PYTHONPATH для корректной работы Python
 ENV PYTHONPATH /
 
-CMD [ "uvicorn", "src.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000" ]
+CMD [ "/wait-for-it.sh", "postgres:5432", "--", "uvicorn", "src.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000" ]

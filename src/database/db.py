@@ -47,6 +47,7 @@ class Database:
 
     @classmethod
     async def fetch_top_100_repos(cls, sort_by: str) -> List:
+        """Извлечение из БД информации о топ 100 репозиториев"""
         async with cls.get_connection() as connection:
             query = f"""
             SELECT repo, owner, position_cur, position_prev, stars, watchers, forks, open_issues, language
@@ -61,15 +62,16 @@ class Database:
         
     @classmethod
     async def fetch_repo_activity(cls, owner: str, repo: str, since: date, until: date) -> List:
+        """Извлечение из БД информации об активности репозитория по дням"""
         async with cls.get_connection() as connection:
             repo = f"{owner}/{repo}"
             repo_id_data = await connection.fetch(
-                "SELECT id FROM top_repos ORDER BY stars DESC LIMIT 100 WHERE repo = $1",
+                "SELECT id FROM top_repos WHERE repo = $1 ORDER BY stars DESC LIMIT 100",
                 repo
             )
             if not repo_id_data:
                 return None
-            repo_id = repo_id_data["id"]
+            repo_id = repo_id_data[0]["id"]
 
             activity = await connection.fetch(
                 """SELECT date, commits, authors

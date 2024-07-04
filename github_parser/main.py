@@ -2,7 +2,7 @@ import asyncio
 import logging
 
 from db import Database
-from parser import save_top_100_repos_tp_db, update_positions_top_100, repo_activity
+from parser import save_top_100_repos_tp_db, update_positions_top_100, repo_activity # type: ignore
 
 logging.basicConfig(level=logging.INFO)
 
