@@ -5,7 +5,7 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 # Копируем bash скрипт для проверки состояния БД
-COPY /wait-for-it.sh .
+COPY sh_scripts/wait-for-it.sh .
 RUN chmod +x wait-for-it.sh
 
 # Устанавливаем рабочую директорию внутри контейнера

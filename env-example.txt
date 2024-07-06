@@ -1,0 +1,9 @@
+DB_HOST=<хост локальной БД>
+DB_PORT=<порт>
+DB_USER=<пользователь БД>
+DB_PASSWORD=<пароль пользователя БД>
+DB_NAME=<название БД>
+
+POSTGRES_USER=<имя сервиса БД в compose файле>
+POSTGRES_PASSWORD=<пароль пользователя БД>
+POSTGRES_DB_NAME=<название БД>

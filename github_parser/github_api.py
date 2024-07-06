@@ -5,11 +5,9 @@ from typing import Dict, List, Any
 
 
 GITHUB_API_URL = "https://api.github.com"
-GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
 headers = {
     "Accept": "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-    "Authorization": f'token {GITHUB_TOKEN}'
+    "X-GitHub-Api-Version": "2022-11-28"
 }
 
 async def fetch_data(session: aiohttp.ClientSession, url: str) -> Dict:

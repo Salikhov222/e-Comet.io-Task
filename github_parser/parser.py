@@ -73,7 +73,10 @@ async def repo_activity(repos: List[Dict[str, Any]], connection: asyncpg.Connect
     """Получение активности репозиториев и сохранением этих данных в БД"""
     existing_repos = await fetch_existing_repos(connection)
     for repo in repos:
-        repo_id = existing_repos[repo['full_name']][0]
+        repo_data = existing_repos.get(repo['full_name'])
+        if not repo_data:
+            continue
+        repo_id = repo_data[0]
         owner, repo = repo['full_name'].split('/')
         commits = await repo_commits(owner, repo)
         # словарь для хранения коммитов в по дням в качестве ключей, а
