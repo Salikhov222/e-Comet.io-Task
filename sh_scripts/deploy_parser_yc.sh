@@ -46,10 +46,11 @@ yc serverless function version create \
         --entrypoint main.handler \
         --execution-timeout 5m \
         --memory 128m \
-        --environment POSTGRES_USER=$POSTGRES_USER \
-        --environment POSTGRES_PASSWORD=$POSTGRES_PASSWORD \
-        --environment POSTGRES_HOST=$POSTGRES_HOST \
-        --environment POSTGRES_PORT=$POSTGRES_PORT \
+        --environment DB_USER=$DB_USER \
+        --environment DB_PASSWORD=$DB_PASSWORD \
+        --environment DB_HOST=$DB_HOST \
+        --environment DB_PORT=$DB_PORT \
+        --environment DB_NAME=$DB_NAME \
         --source-path ./github_parser
 
 echo "Функция parser-function готова к использованию."
